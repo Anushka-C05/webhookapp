@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Webhook Event Dashboard</title>
+
+    <style>
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f1f5f9;
+            color: #1e293b;
+        }
+
+        header {
+            background: #172554;
+            color: white;
+            padding: 24px 8%;
+        }
+
+        header h1 { margin: 0 0 8px; }
+        header p { margin: 0; color: #cbd5e1; }
+
+        main {
+            max-width: 1000px;
+            margin: 30px auto;
+            padding: 0 20px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .card {
+            background: white;
+            padding: 22px;
+            border-radius: 12px;
+            box-shadow: 0 3px 12px #0000000d;
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin: 14px 0 6px;
+            font-weight: bold;
+        }
+
+        input, select {
+            width: 100%;
+            padding: 11px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+        }
+
+        button {
+            padding: 11px 16px;
+            border: 0;
+            border-radius: 6px;
+            background: #2563eb;
+            color: white;
+            cursor: pointer;
+            margin-top: 14px;
+        }
+
+        button:hover { background: #1d4ed8; }
+
+        .secondary { background: #475569; }
+
+        #message { margin-top: 14px; }
+
+        .table-wrap { overflow-x: auto; }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+        }
+
+        th, td {
+            padding: 12px 8px;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        th { background: #f8fafc; }
+
+        @media (max-width: 650px) {
+            .grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+
+<body>
+<header>
+    <h1>Webhook Event Dashboard</h1>
+    <p>Receive, store, and monitor webhook events</p>
+</header>
+
+<main>
+    <div class="grid">
+        <section class="card">
+            <h2>Send an Event</h2>
+
+            <form id="eventForm">
+                <label for="event">Event Type</label>
+                <select id="event" required>
+                    <option value="push">Push</option>
+                    <option value="pull_request">Pull Request</option>
+                    <option value="issue">Issue</option>
+                </select>
+
+                <label for="repository">Repository</label>
+                <input id="repository" required
+                       placeholder="e.g. webhookapp">
+
+                <label for="user">User</label>
+                <input id="user" required
+                       placeholder="e.g. Anushka">
+
+                <button type="submit">Submit Event</button>
+            </form>
+
+            <p id="message" role="status"></p>
+        </section>
+
+        <section class="card">
+            <h2>Find Events</h2>
+
+            <label for="filterRepository">Repository Filter</label>
+            <input id="filterRepository"
+                   placeholder="Leave blank for all events">
+
+            <button id="filterButton">Search Events</button>
+            <button id="allButton" class="secondary">Show All</button>
+
+            <p>Events are retrieved from your Spring Boot API and MySQL database.</p>
+        </section>
+    </div>
+
+    <section class="card">
+        <h2>Event History</h2>
+        <p id="count">Loading events...</p>
+
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Event</th>
+                        <th>Repository</th>
+                        <th>User</th>
+                        <th>Received At</th>
+                    </tr>
+                </thead>
+                <tbody id="eventsTable"></tbody>
+            </table>
+        </div>
+    </section>
+</main>
+
+<script>
+    const form = document.getElementById("eventForm");
+    const message = document.getElementById("message");
+    const table = document.getElementById("eventsTable");
+    const count = document.getElementById("count");
+
+    async function loadEvents(repository = "") {
+        count.textContent = "Loading...";
+        table.replaceChildren();
+
+        try {
+            const url = repository.trim()
+                ? "/webhook/events?repository=" + encodeURIComponent(repository.trim())
+                : "/webhook/events";
+
+            const response = await fetch(url);
+
+            if (!response.ok) {
+                throw new Error("Could not load events.");
+            }
+
+            const events = await response.json();
+
+            events.forEach(item => {
+                const row = document.createElement("tr");
+
+                [
+                    item.id,
+                    item.event,
+                    item.repository,
+                    item.user,
+                    item.receivedAt
+                        ? new Date(item.receivedAt).toLocaleString()
+                        : "Not available"
+                ].forEach(value => {
+                    const cell = document.createElement("td");
+                    cell.textContent = value ?? "";
+                    row.appendChild(cell);
+                });
+
+                table.appendChild(row);
+            });
+
+            count.textContent = "Total events: " + events.length;
+        } catch (error) {
+            count.textContent = error.message;
+        }
+    }
+
+    form.addEventListener("submit", async function (e) {
+        e.preventDefault();
+        message.textContent = "Submitting...";
+
+        const payload = {
+            event: document.getElementById("event").value,
+            repository: document.getElementById("repository").value.trim(),
+            user: document.getElementById("user").value.trim()
+        };
+
+        try {
+            const response = await fetch("/webhook", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(
+                    Object.values(result).filter(v => typeof v === "string").join(" | ")
+                    || "Request failed"
+                );
+            }
+
+            message.textContent = "Event submitted successfully!";
+            form.reset();
+            await loadEvents(
+                document.getElementById("filterRepository").value
+            );
+        } catch (error) {
+            message.textContent = "Error: " + error.message;
+        }
+    });
+
+    document.getElementById("filterButton").addEventListener("click", () => {
+        loadEvents(document.getElementById("filterRepository").value);
+    });
+
+    document.getElementById("allButton").addEventListener("click", () => {
+        document.getElementById("filterRepository").value = "";
+        loadEvents();
+    });
+
+    loadEvents();
+</script>
+</body>
+</html>
